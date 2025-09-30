@@ -84,8 +84,8 @@ generate_docker_bake_file() {
 
     # Determina la versione PHP dal nome file/tag
     php_version=$(echo "$dockerfile_tag" | grep -oP 'php\K[0-9]+' | head -n1)
-    # Use only platforms supported by official PHP images
-    platforms="[\"linux/amd64\",\"linux/arm64\",\"linux/arm/v7\"]"
+    # Use only amd64 to avoid QEMU emulation issues
+    platforms="[\"linux/amd64\"]"
 
     echo "target \"$target_name\" {" >> "$bake_file"
     echo "  context = \".\"" >> "$bake_file"
@@ -196,10 +196,10 @@ if [ "$DRY_RUN" = false ]; then
   generate_docker_bake_file
 
   echo "🔧 Building and pushing base images first..."
-  docker buildx bake --file "./bake/$TIMESTAMP/docker-bake.hcl" base
+  docker buildx bake --push --file "./bake/$TIMESTAMP/docker-bake.hcl" base
 
   echo "🔧 Building and pushing node images..."
-  docker buildx bake --file "./bake/$TIMESTAMP/docker-bake.hcl" node
+  docker buildx bake --push --file "./bake/$TIMESTAMP/docker-bake.hcl" node
 
   echo "✅ Docker images built, pushed, and digests handled via buildx bake."
 else

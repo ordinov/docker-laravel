@@ -1,4 +1,4 @@
-FROM php:7.3-apache
+FROM php:7.4-apache
 
 # Install Composer
 RUN curl -sS https://getcomposer.org/installer | php && \
@@ -8,26 +8,44 @@ RUN curl -sS https://getcomposer.org/installer | php && \
 # Set workdir
 WORKDIR /var/www/html
 
+# Workaround for QEMU ARM emulation libc-bin trigger segfaults
+RUN if [ "$(uname -m)" = "armv7l" ] || [ "$(uname -m)" = "aarch64" ]; then \
+  echo '#!/bin/sh' > /usr/sbin/ldconfig.real-backup && \
+  mv /usr/sbin/ldconfig.real /usr/sbin/ldconfig.real-original || true && \
+  echo '#!/bin/sh\nexit 0' > /usr/sbin/ldconfig.real && \
+  chmod +x /usr/sbin/ldconfig.real; fi
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
   git nano curl wget zip unzip mariadb-client \
-  libonig-dev libxml2-dev zlib1g-dev libpng-dev libjpeg-dev \
-  libfreetype6-dev libzip-dev libmemcached-dev \
-  libsodium-dev libssl-dev libicu-dev ca-certificates imagemagick libmagickwand-dev \
+  libonig-dev libxml2-dev zlib1g-dev libpng-dev libjpeg-dev libfreetype6-dev \
+  libzip-dev libmemcached-dev libsodium-dev libssl-dev libicu-dev \
+  ca-certificates imagemagick libmagickwand-dev \
   build-essential pkg-config p7zip-full \
   && (apt-get install -y libmemcached11 libmemcachedutil2 || apt-get install -y libmemcached11t64 libmemcachedutil2t64) \
-  && update-ca-certificates
+  && update-ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+# Restore ldconfig if it was backed up
+RUN if [ -f /usr/sbin/ldconfig.real-original ]; then \
+  mv /usr/sbin/ldconfig.real-original /usr/sbin/ldconfig.real && \
+  ldconfig; fi
 
 # 2025-07-24 added gd extension for image processing
-RUN apt-get update && apt-get install -y \
-    libjpeg-dev libpng-dev libfreetype6-dev \
- && docker-php-ext-configure gd --with-jpeg --with-freetype \
- && docker-php-ext-install gd \
- && docker-php-ext-enable gd
+RUN set -eux; \
+  PHP_VERSION_SHORT="$(php -r 'echo PHP_MAJOR_VERSION . "." . PHP_MINOR_VERSION;')"; \
+  apt-get update && apt-get install -y libjpeg-dev libpng-dev libfreetype6-dev; \
+  case "$PHP_VERSION_SHORT" in \
+    7.3) \
+      docker-php-ext-configure gd --with-freetype-dir=/usr/include/ --with-jpeg-dir=/usr/include/ ;; \
+    *) \
+      docker-php-ext-configure gd --with-jpeg --with-freetype ;; \
+  esac; \
+  docker-php-ext-install gd; \
+  docker-php-ext-enable gd
 
 # Install PHP extensions
 RUN docker-php-ext-install -j$(nproc) iconv \
-  && docker-php-ext-install -j$(nproc) gd \
   && docker-php-ext-install pdo pdo_mysql mysqli mbstring exif pcntl bcmath zip sockets sodium intl \
   && docker-php-ext-configure intl \
   && docker-php-ext-install intl
