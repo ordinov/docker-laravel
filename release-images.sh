@@ -48,14 +48,29 @@ write_group_log() { :; }
 
 generate_docker_bake_file() {
   local bake_file="./bake/$TIMESTAMP/docker-bake.hcl"
-  echo 'group "default" {' > "$bake_file"
-  echo '  targets = [' >> "$bake_file"
 
+  # Create base images group
+  echo 'group "base" {' > "$bake_file"
+  echo '  targets = [' >> "$bake_file"
   jq -c '.[]' "$JSON_FILE" | while read -r entry; do
     title=$(echo "$entry" | jq -r '.title' | sed 's/[^a-zA-Z0-9]/_/g')
-    echo "    \"$title\"," >> "$bake_file"
+    if [[ "$title" == *"nonode"* ]]; then
+      echo "    \"$title\"," >> "$bake_file"
+    fi
   done
+  echo '  ]' >> "$bake_file"
+  echo '}' >> "$bake_file"
+  echo >> "$bake_file"
 
+  # Create node images group
+  echo 'group "node" {' >> "$bake_file"
+  echo '  targets = [' >> "$bake_file"
+  jq -c '.[]' "$JSON_FILE" | while read -r entry; do
+    title=$(echo "$entry" | jq -r '.title' | sed 's/[^a-zA-Z0-9]/_/g')
+    if [[ "$title" != *"nonode"* ]]; then
+      echo "    \"$title\"," >> "$bake_file"
+    fi
+  done
   echo '  ]' >> "$bake_file"
   echo '}' >> "$bake_file"
   echo >> "$bake_file"
@@ -65,12 +80,12 @@ generate_docker_bake_file() {
     target_name=$(echo "$title" | sed 's/[^a-zA-Z0-9]/_/g')
     dockerfile_tag=${title##*:}
     dockerfile_path="$DIST_DIR/${dockerfile_tag}.Dockerfile"
-    tags=$(echo "$entry" | jq -r '.tags[]' | jq -R . | jq -s -c '.')
+    tags=$(echo "$entry" | jq -r '.tags[]' | sed "s|^|$REPO:|" | jq -R . | jq -s -c '.')
 
     # Determina la versione PHP dal nome file/tag
     php_version=$(echo "$dockerfile_tag" | grep -oP 'php\K[0-9]+' | head -n1)
-    # Imposta piattaforme sicure per tutte le versioni
-    platforms="[\"linux/amd64\",\"linux/arm64\",\"linux/arm/v7\",\"linux/386\",\"linux/ppc64le\",\"linux/s390x\",\"linux/mips64le\"]"
+    # Use only platforms supported by official PHP images
+    platforms="[\"linux/amd64\",\"linux/arm64\",\"linux/arm/v7\"]"
 
     echo "target \"$target_name\" {" >> "$bake_file"
     echo "  context = \".\"" >> "$bake_file"
@@ -179,7 +194,12 @@ if [ "$DRY_RUN" = false ]; then
   docker buildx inspect --bootstrap
 
   generate_docker_bake_file
-  docker buildx bake --file "./bake/$TIMESTAMP/docker-bake.hcl"
+
+  echo "🔧 Building and pushing base images first..."
+  docker buildx bake --file "./bake/$TIMESTAMP/docker-bake.hcl" base
+
+  echo "🔧 Building and pushing node images..."
+  docker buildx bake --file "./bake/$TIMESTAMP/docker-bake.hcl" node
 
   echo "✅ Docker images built, pushed, and digests handled via buildx bake."
 else
