@@ -1,0 +1,31 @@
+services:
+  ordinov-laravel-test-app:
+    image: ordinov/laravel:latest
+    container_name: ordinov-laravel-test-app
+    restart: unless-stopped
+    # volumes:
+    #   - ./laravel:/var/www/html
+    ports:
+      - '8089:80'
+    depends_on:
+      - ordinov-laravel-test-db
+    networks:
+      - ordinov-laravel-test-network
+
+  # MariaDB Service
+  ordinov-laravel-test-db:
+    image: mariadb:10.6
+    container_name: ordinov-laravel-test-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: laravel
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+    networks:
+      - ordinov-laravel-test-network
+
+# Networks
+networks:
+  ordinov-laravel-test-network:
+    driver: bridge
